@@ -16,7 +16,7 @@ from utils import *
 
 class DCGAN(object):
     def __init__(self, sess, image_size=64, is_crop=False,
-                 batch_size=64, sample_size=64,
+                 batch_size=1, sample_size=64,
                  z_dim=100, gf_dim=64, df_dim=64,
                  gfc_dim=1024, dfc_dim=1024, c_dim=3,
                  checkpoint_dir=None, lam=0.1):
@@ -240,7 +240,7 @@ Initializing a new one.
             mask = np.ones(self.image_shape)
             mask[np.random.random(self.image_shape[:2]) < fraction_masked] = 0.0
         elif config.maskType == 'center':
-            scale = 0.25
+            scale = 0.1
             assert(scale <= 0.5)
             mask = np.ones(self.image_shape)
             sz = self.image_size
@@ -272,8 +272,6 @@ Initializing a new one.
 
             batch_mask = np.resize(mask, [self.batch_size] + self.image_shape)
             zhats = np.random.uniform(-1, 1, size=(self.batch_size, self.z_dim))
-            m = 0
-            v = 0
 
             nRows = np.ceil(batchSz/8)
             nCols = 8
@@ -292,17 +290,31 @@ Initializing a new one.
                 }
                 run = [self.complete_loss, self.grad_complete_loss, self.G]
                 loss, g, G_imgs = self.sess.run(run, feed_dict=fd)
+                zhats_old = np.copy(zhats)
+                v = 2*np.random.randn(self.batch_size, self.z_dim)
+                loss_old = loss[0]
+                logprob_old = loss_old + np.sum(v**2)/2
+                epsilon = 0.0001
 
-                m_prev = np.copy(m)
-                v_prev = np.copy(v)
-                m = config.beta1 * m_prev + (1 - config.beta1) * g[0]
-                v = config.beta2 * v_prev + (1 - config.beta2) * np.multiply(g[0], g[0])
-                m_hat = m / (1 - config.beta1 ** (i + 1))
-                v_hat = v / (1 - config.beta2 ** (i + 1))
-                zhats += - np.true_divide(config.lr * m_hat, (np.sqrt(v_hat) + config.eps))
-                zhats = np.clip(zhats, -1, 1)
+                for steps in range(1000):
+                    v -= epsilon/2 * g[0]
+                    zhats += epsilon * v
+                    np.copyto(zhats, np.clip(zhats, -1, 1))
+                    loss, g, _ = self.sess.run(run, feed_dict=fd)
+                    v -= epsilon/2 * g[0]
 
-                if i % 50 == 0:
+                logprob = loss[0] + np.sum(v**2)/2
+                accept = np.exp(logprob_old - logprob)
+                if accept > 1 or np.random.uniform() < accept:
+                    ans = 'accepted'
+                else:
+                    ans = 'rejected'
+                    np.copyto(zhats, zhats_old)
+                print(accept, ':', ans, '|',
+                      loss_old, '+', logprob_old-loss_old, '=', logprob_old, '|',
+                      loss[0], '+', logprob-loss[0], '=', logprob, '|', logprob_old - logprob)
+
+                if i % 10 == 0:
                     print(i, np.mean(loss[0:batchSz]))
                     imgName = os.path.join(config.outDir,
                                            'hats_imgs/{:04d}.png'.format(i))
