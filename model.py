@@ -293,17 +293,50 @@ Initializing a new one.
                 run = [self.complete_loss, self.grad_complete_loss, self.G]
                 loss, g, G_imgs = self.sess.run(run, feed_dict=fd)
 
-                m_prev = np.copy(m)
-                v_prev = np.copy(v)
-                m = config.beta1 * m_prev + (1 - config.beta1) * g[0]
-                v = config.beta2 * v_prev + (1 - config.beta2) * np.multiply(g[0], g[0])
-                m_hat = m / (1 - config.beta1 ** (i + 1))
-                v_hat = v / (1 - config.beta2 ** (i + 1))
-                zhats += - np.true_divide(config.lr * m_hat, (np.sqrt(v_hat) + config.eps))
-                zhats = np.clip(zhats, -1, 1)
+                if config.approach == 'adam':
+                    # Optimize single completion with Adam
+                    m_prev = np.copy(m)
+                    v_prev = np.copy(v)
+                    m = config.beta1 * m_prev + (1 - config.beta1) * g[0]
+                    v = config.beta2 * v_prev + (1 - config.beta2) * np.multiply(g[0], g[0])
+                    m_hat = m / (1 - config.beta1 ** (i + 1))
+                    v_hat = v / (1 - config.beta2 ** (i + 1))
+                    zhats += - np.true_divide(config.lr * m_hat, (np.sqrt(v_hat) + config.eps))
+                    zhats = np.clip(zhats, -1, 1)
+
+                elif config.approach == 'hmc':
+                    # Sample example completions with HMC
+                    assert(self.batch_size == 1)
+                    zhats_old = np.copy(zhats)
+                    v = np.random.randn(self.batch_size, self.z_dim)
+                    loss_old = loss[0]
+                    logprob_old = config.hmcBeta * loss_old + np.sum(v**2)/2
+
+                    for steps in range(config.hmcL):
+                        v -= config.hmcEps/2 * config.hmcBeta * g[0]
+                        zhats += config.hmcEps * v
+                        np.copyto(zhats, np.clip(zhats, -1, 1))
+                        loss, g, _ = self.sess.run(run, feed_dict=fd)
+                        v -= config.hmcEps/2 * config.hmcBeta * g[0]
+
+                    logprob = config.hmcBeta * loss[0] + np.sum(v**2)/2
+                    accept = np.exp(logprob_old - logprob)
+                    if accept < 1 and np.random.uniform() > accept:
+                        ans = 'rejected'
+                    else:
+                        ans = 'accepted'
+                    print(accept, ':', ans, '|',
+                          config.hmcBeta*loss_old, '+', logprob_old-config.hmcBeta*loss_old, '=', logprob_old, '|',
+                          config.hmcBeta*loss[0], '+', logprob-config.hmcBeta*loss[0], '=', logprob, '|', logprob_old-logprob)
+                    if ans == 'rejected':
+                        np.copyto(zhats, zhats_old)
+                        loss[0] = loss_old
+
+                else:
+                    assert(False)
 
                 if i % config.outInterval == 0:
-                    print(i, np.mean(loss[0:batchSz]))
+                    print(i, np.mean(config.hmcBeta*loss[0:batchSz]))
                     imgName = os.path.join(config.outDir,
                                            'hats_imgs/{:04d}.png'.format(i))
                     nRows = np.ceil(batchSz/8)
