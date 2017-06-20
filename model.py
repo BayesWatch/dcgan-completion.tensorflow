@@ -221,6 +221,19 @@ Initializing a new one.
         os.makedirs(os.path.join(config.outDir, 'hats_imgs'), exist_ok=True)
         os.makedirs(os.path.join(config.outDir, 'completed'), exist_ok=True)
 
+        self.labels = tf.placeholder(tf.float32, [None, 1], 'labels')
+        self.C, self.C_logits = self.classifier(self.images)
+        self.C_, self.C_logits_ = self.classifier(self.G, reuse=True)
+        t_vars = tf.trainable_variables()
+        self.c_vars = [var for var in t_vars if 'c_' in var.name]
+        self.c_loss = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(logits=self.C_logits,
+                                                    labels=self.labels))
+        self.grad_C_ = tf.gradients(self.C_, self.z)
+
+        c_optim = tf.train.AdamOptimizer(0.0002, beta1=config.beta1) \
+                          .minimize(self.c_loss, var_list=self.c_vars, name='c_optim')
+
         try:
             tf.global_variables_initializer().run()
         except:
@@ -228,6 +241,38 @@ Initializing a new one.
 
         isLoaded = self.load(self.checkpoint_dir)
         assert(isLoaded)
+
+        tf.variables_initializer(self.c_vars).run()
+        start_time = time.time()
+
+        file_labels = {}
+        with open("/home/richard/diss/dcgan-completion.tensorflow/data/celeba/list_attr_celeba.txt") as f:
+            for line in f:
+                b = line.split()
+                if b[0][-4:] == ".jpg":
+                    c = b.pop(0)[:6]
+                    file_labels[c] = [1 if b[20]=="1" else 0]
+
+        for epoch in xrange(1):
+            data = glob(os.path.join(config.dataset, "*.png"))
+            batch_idxs = min(len(data), np.inf) // 64 #self.batch_size
+
+            for idx in xrange(0, 1000): #batch_idxs):
+                batch_files = data[idx*64:(idx+1)*64]
+                batch = [get_image(batch_file, self.image_size, is_crop=self.is_crop)
+                         for batch_file in batch_files]
+                batch_images = np.array(batch).astype(np.float32)
+
+                batch_labels = np.array([file_labels[batch_file[-10:-4]] for batch_file in batch_files]).astype(np.float32)
+
+                # Update C network
+                _, summary_str = self.sess.run([c_optim, self.c_loss],
+                    feed_dict={ self.images: batch_images, self.labels: batch_labels, self.is_training: True })
+
+                if idx % 100 == 0:
+                    print("Epoch: [%2d] [%4d/%4d] time: %4.4f, c_loss: %.8f" \
+                        % (epoch, idx, batch_idxs,
+                            time.time() - start_time, summary_str))
 
         # data = glob(os.path.join(config.dataset, "*.png"))
         nImgs = len(config.imgs)
@@ -290,7 +335,7 @@ Initializing a new one.
                     self.images: batch_images,
                     self.is_training: False
                 }
-                run = [self.complete_loss, self.grad_complete_loss, self.G]
+                run = [self.C_, self.grad_C_, self.G]
                 loss, g, G_imgs = self.sess.run(run, feed_dict=fd)
 
                 if config.approach == 'adam':
@@ -359,8 +404,21 @@ Initializing a new one.
             h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim*2, name='d_h1_conv'), self.is_training))
             h2 = lrelu(self.d_bn2(conv2d(h1, self.df_dim*4, name='d_h2_conv'), self.is_training))
             h3 = lrelu(self.d_bn3(conv2d(h2, self.df_dim*8, name='d_h3_conv'), self.is_training))
-            h4 = linear(tf.reshape(h3, [-1, 8192]), 1, 'd_h3_lin')
+            h4 = linear(tf.reshape(h3, [-1, 8192]), 1, 'd_h3_lin') # Should be h4
     
+            return tf.nn.sigmoid(h4), h4
+
+    def classifier(self, image, reuse=False):
+        with tf.variable_scope("classifier") as scope:
+            if reuse:
+                scope.reuse_variables()
+
+            h0 = lrelu(conv2d(image, self.df_dim, name='c_h0_conv'))
+            h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim*2, name='c_h1_conv'), self.is_training))
+            h2 = lrelu(self.d_bn2(conv2d(h1, self.df_dim*4, name='c_h2_conv'), self.is_training))
+            h3 = lrelu(self.d_bn3(conv2d(h2, self.df_dim*8, name='c_h3_conv'), self.is_training))
+            h4 = linear(tf.reshape(h3, [-1, 8192]), 1, 'c_h4_lin')
+
             return tf.nn.sigmoid(h4), h4
 
     def generator(self, z):
