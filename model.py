@@ -221,15 +221,18 @@ Initializing a new one.
         os.makedirs(os.path.join(config.outDir, 'hats_imgs'), exist_ok=True)
         os.makedirs(os.path.join(config.outDir, 'completed'), exist_ok=True)
 
-        self.labels = tf.placeholder(tf.float32, [None, 1], 'labels')
-        self.C, self.C_logits = self.classifier(self.images)
-        self.C_, self.C_logits_ = self.classifier(self.G, reuse=True)
+        self.labels = tf.placeholder(tf.float32, [None, 40], 'labels')
+        self.hidden_comp = tf.placeholder(tf.float32, [None, 8192], 'hidden_comp')
+        self.C, self.C_logits, self.C_hidden = self.classifier(self.images)
+        self.C_, self.C_logits_, self.C_hidden_ = self.classifier(self.G, reuse=True)
         t_vars = tf.trainable_variables()
         self.c_vars = [var for var in t_vars if 'c_' in var.name]
         self.c_loss = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(logits=self.C_logits,
                                                     labels=self.labels))
         self.grad_C_ = tf.gradients(self.C_, self.z)
+        self.hidden_diff_ = tf.reduce_sum((self.C_hidden_ - self.hidden_comp)**2, 1)
+        self.grad_hidden_diff_ = tf.gradients(self.hidden_diff_, self.z)
 
         c_optim = tf.train.AdamOptimizer(0.0002, beta1=config.beta1) \
                           .minimize(self.c_loss, var_list=self.c_vars, name='c_optim')
@@ -251,7 +254,7 @@ Initializing a new one.
                 b = line.split()
                 if b[0][-4:] == ".jpg":
                     c = b.pop(0)[:6]
-                    file_labels[c] = [1 if b[20]=="1" else 0]
+                    file_labels[c] = [1 if b[i]=="1" else 0 for i in range(40)]
 
         for epoch in xrange(1):
             data = glob(os.path.join(config.dataset, "*.png"))
@@ -266,7 +269,7 @@ Initializing a new one.
                 batch_labels = np.array([file_labels[batch_file[-10:-4]] for batch_file in batch_files]).astype(np.float32)
 
                 # Update C network
-                _, summary_str = self.sess.run([c_optim, self.c_loss],
+                _, summary_str, hidden_orig = self.sess.run([c_optim, self.c_loss, self.C_hidden],
                     feed_dict={ self.images: batch_images, self.labels: batch_labels, self.is_training: True })
 
                 if idx % 100 == 0:
@@ -333,9 +336,10 @@ Initializing a new one.
                     self.z: zhats,
                     self.mask: batch_mask,
                     self.images: batch_images,
-                    self.is_training: False
+                    self.is_training: False,
+                    self.hidden_comp: [hidden_orig[0]]
                 }
-                run = [self.C_, self.grad_C_, self.G]
+                run = [self.hidden_diff_, self.grad_hidden_diff_, self.G]
                 loss, g, G_imgs = self.sess.run(run, feed_dict=fd)
 
                 if config.approach == 'adam':
@@ -417,9 +421,10 @@ Initializing a new one.
             h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim*2, name='c_h1_conv'), self.is_training))
             h2 = lrelu(self.d_bn2(conv2d(h1, self.df_dim*4, name='c_h2_conv'), self.is_training))
             h3 = lrelu(self.d_bn3(conv2d(h2, self.df_dim*8, name='c_h3_conv'), self.is_training))
-            h4 = linear(tf.reshape(h3, [-1, 8192]), 1, 'c_h4_lin')
+            h4a = tf.reshape(h3, [-1, 8192])
+            h4 = linear(h4a, 40, 'c_h4_lin')
 
-            return tf.nn.sigmoid(h4), h4
+            return tf.nn.sigmoid(h4), h4, h4a
 
     def generator(self, z):
         with tf.variable_scope("generator") as scope:

@@ -1,1 +1,1 @@
-./complete.py --approach=hmc --hmcBeta=100 --outInterval=10 --dataset ~/diss/dcgan-completion.tensorflow/data/celeba/aligned/ ~/diss/dcgan-completion.tensorflow/input/Aaron_Eckhart_0001.png --outDir output
+./complete.py --approach=hmc --hmcBeta=0.1 --outInterval=10 --dataset ~/diss/dcgan-completion.tensorflow/data/celeba/aligned/ ~/diss/dcgan-completion.tensorflow/input/Aaron_Eckhart_0001.png --outDir output3
