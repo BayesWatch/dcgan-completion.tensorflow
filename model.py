@@ -305,7 +305,7 @@ Initializing a new one.
                         np.savetxt(f, zhats[img:img+1])
 
                 if i % config.outInterval == 0:
-                    print(i, np.mean(config.hmcBeta*loss[0:batchSz]))
+                    print(i, config.hmcBeta, np.mean(config.hmcBeta*loss[0:batchSz]))
                     imgName = os.path.join(config.outDir,
                                            'hats_imgs/{:04d}.png'.format(i))
                     nRows = np.ceil(batchSz/8)
@@ -355,6 +355,8 @@ Initializing a new one.
                           config.hmcBeta*loss[0], '+', logprob-config.hmcBeta*loss[0], '=', logprob, '|', logprob_old-logprob)
                     if ans == 'rejected':
                         np.copyto(zhats, zhats_old)
+
+                    config.hmcBeta *= 1.004
 
                 else:
                     assert(False)
