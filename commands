@@ -3,3 +3,4 @@ for i in {0..9} ; do ./complete.py --centerScale=0.1 --outInterval=10 --approach
 for i in {0..9} ; do ./complete.py --centerScale=0.1 --outInterval=10 ~/diss/dcgan-completion.tensorflow/input/Aaron_Eckhart_0001.png --outDir output/2$i ; done
 for i in {0..9} ; do ./complete.py --centerScale=0.1 --outInterval=10 ~/diss/dcgan-completion.tensorflow/input/Aishwarya_Rai_0001.png --outDir output/3$i ; done
 for i in {0..9} ; do ./complete.py --centerScale=0.1 --outInterval=10 --approach=hmc --hmcBeta=0.1 ~/diss/dcgan-completion.tensorflow/input/Aaron_Eckhart_0001.png --outDir output/4$i ; done
+for i in {0..9} ; do ./complete.py --centerScale=0.1 --outInterval=10 --approach=hmc --hmcBeta=0.1 ~/diss/dcgan-completion.tensorflow/input/Aishwarya_Rai_0001.png --outDir output/5$i ; done
