@@ -245,44 +245,19 @@ Initializing a new one.
         isLoaded = self.load(self.checkpoint_dir)
         assert(isLoaded)
 
-        # data = glob(os.path.join(config.dataset, "*.png"))
-        nImgs = len(config.imgs)
+        master_image = get_image(config.imgs[0], 0, False)
+        master_image = np.repeat(np.repeat(master_image, self.lowres, 0), self.lowres, 1)
 
-        batch_idxs = int(np.ceil(nImgs/self.batch_size))
-        lowres_mask = np.zeros(self.lowres_shape)
-        if config.maskType == 'random':
-            fraction_masked = 0.2
-            mask = np.ones(self.image_shape)
-            mask[np.random.random(self.image_shape[:2]) < fraction_masked] = 0.0
-        elif config.maskType == 'center':
-            assert(config.centerScale <= 0.5)
-            mask = np.ones(self.image_shape)
-            sz = self.image_size
-            l = int(self.image_size*config.centerScale)
-            u = int(self.image_size*(1.0-config.centerScale))
-            mask[l:u, l:u, :] = 0.0
-        elif config.maskType == 'left':
-            mask = np.ones(self.image_shape)
-            c = self.image_size // 2
-            mask[:,:c,:] = 0.0
-        elif config.maskType == 'full':
-            mask = np.ones(self.image_shape)
-        elif config.maskType == 'grid':
+        for idx in range(self.lowres * self.lowres):
+            idx_x = idx % self.lowres
+            idx_y = idx // self.lowres
+
             mask = np.zeros(self.image_shape)
-            mask[::4,::4,:] = 1.0
-        elif config.maskType == 'lowres':
             lowres_mask = np.ones(self.lowres_shape)
-            mask = np.zeros(self.image_shape)
-        else:
-            assert(False)
 
-        for idx in xrange(0, batch_idxs):
-            l = idx*self.batch_size
-            u = min((idx+1)*self.batch_size, nImgs)
-            batchSz = u-l
-            batch_files = config.imgs[l:u]
-            batch = [get_image(batch_file, self.image_size, is_crop=self.is_crop)
-                     for batch_file in batch_files]
+            batchSz = 1
+            batch = [master_image[idx_y*self.image_size:(idx_y+1)*self.image_size,
+                                  idx_x*self.image_size:(idx_x+1)*self.image_size, :]]
             batch_images = np.array(batch).astype(np.float32)
             if batchSz < self.batch_size:
                 print(batchSz)
@@ -297,19 +272,19 @@ Initializing a new one.
             nRows = np.ceil(batchSz/8)
             nCols = min(8, batchSz)
             save_images(batch_images[:batchSz,:,:,:], [nRows,nCols],
-                        os.path.join(config.outDir, 'before.png'))
+                        os.path.join(config.outDir, 'before_{}_{}.png'.format(idx_y, idx_x)))
             masked_images = np.multiply(batch_images, mask)
             save_images(masked_images[:batchSz,:,:,:], [nRows,nCols],
-                        os.path.join(config.outDir, 'masked.png'))
+                        os.path.join(config.outDir, 'masked_{}_{}.png'.format(idx_y, idx_x)))
             if lowres_mask.any():
                 lowres_images = np.reshape(batch_images, [self.batch_size, self.lowres_size, self.lowres,
                     self.lowres_size, self.lowres, self.c_dim]).mean(4).mean(2)
                 lowres_images = np.multiply(lowres_images, lowres_mask)
                 lowres_images = np.repeat(np.repeat(lowres_images, self.lowres, 1), self.lowres, 2)
                 save_images(lowres_images[:batchSz,:,:,:], [nRows,nCols],
-                            os.path.join(config.outDir, 'lowres.png'))
+                            os.path.join(config.outDir, 'lowres_{}_{}.png'.format(idx_y, idx_x)))
             for img in range(batchSz):
-                with open(os.path.join(config.outDir, 'logs/hats_{:02d}.log'.format(img)), 'a') as f:
+                with open(os.path.join(config.outDir, 'logs/hats_{}_{}_{:02d}.log'.format(idx_y, idx_x, img)), 'a') as f:
                     f.write('iter loss ' +
                             ' '.join(['z{}'.format(zi) for zi in range(self.z_dim)]) +
                             '\n')
@@ -326,14 +301,14 @@ Initializing a new one.
                 loss, g, G_imgs, lowres_G_imgs = self.sess.run(run, feed_dict=fd)
 
                 for img in range(batchSz):
-                    with open(os.path.join(config.outDir, 'logs/hats_{:02d}.log'.format(img)), 'ab') as f:
+                    with open(os.path.join(config.outDir, 'logs/hats_{}_{}_{:02d}.log'.format(idx_y, idx_x, img)), 'ab') as f:
                         f.write('{} {} '.format(i, loss[img]).encode())
                         np.savetxt(f, zhats[img:img+1])
 
                 if i % config.outInterval == 0:
                     print(i, np.mean(loss[0:batchSz]))
                     imgName = os.path.join(config.outDir,
-                                           'hats_imgs/{:04d}.png'.format(i))
+                                           'hats_imgs/{}_{}_{:04d}.png'.format(idx_y, idx_x, i))
                     nRows = np.ceil(batchSz/8)
                     nCols = min(8, batchSz)
                     save_images(G_imgs[:batchSz,:,:,:], [nRows,nCols], imgName)
@@ -346,7 +321,7 @@ Initializing a new one.
                     inv_masked_hat_images = np.multiply(G_imgs, 1.0-mask)
                     completed = masked_images + inv_masked_hat_images
                     imgName = os.path.join(config.outDir,
-                                           'completed/{:04d}.png'.format(i))
+                                           'completed/{}_{}_{:04d}.png'.format(idx_y, idx_x, i))
                     save_images(completed[:batchSz,:,:,:], [nRows,nCols], imgName)
 
                 if config.approach == 'adam':
