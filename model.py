@@ -16,7 +16,7 @@ from utils import *
 
 class DCGAN(object):
     def __init__(self, sess, image_size=64, is_crop=False,
-                 batch_size=64, sample_size=64, lowres=8,
+                 batch_size=64, sample_size=64, lowres=16,
                  z_dim=100, gf_dim=64, df_dim=64,
                  gfc_dim=1024, dfc_dim=1024, c_dim=3,
                  checkpoint_dir=None, lam=0.1):
@@ -272,19 +272,19 @@ Initializing a new one.
             nRows = np.ceil(batchSz/8)
             nCols = min(8, batchSz)
             save_images(batch_images[:batchSz,:,:,:], [nRows,nCols],
-                        os.path.join(config.outDir, 'before_{}_{}.png'.format(idx_y, idx_x)))
+                        os.path.join(config.outDir, 'before_{:02d}_{:02d}.png'.format(idx_y, idx_x)))
             masked_images = np.multiply(batch_images, mask)
             save_images(masked_images[:batchSz,:,:,:], [nRows,nCols],
-                        os.path.join(config.outDir, 'masked_{}_{}.png'.format(idx_y, idx_x)))
+                        os.path.join(config.outDir, 'masked_{:02d}_{:02d}.png'.format(idx_y, idx_x)))
             if lowres_mask.any():
                 lowres_images = np.reshape(batch_images, [self.batch_size, self.lowres_size, self.lowres,
                     self.lowres_size, self.lowres, self.c_dim]).mean(4).mean(2)
                 lowres_images = np.multiply(lowres_images, lowres_mask)
                 lowres_images = np.repeat(np.repeat(lowres_images, self.lowres, 1), self.lowres, 2)
                 save_images(lowres_images[:batchSz,:,:,:], [nRows,nCols],
-                            os.path.join(config.outDir, 'lowres_{}_{}.png'.format(idx_y, idx_x)))
+                            os.path.join(config.outDir, 'lowres_{:02d}_{:02d}.png'.format(idx_y, idx_x)))
             for img in range(batchSz):
-                with open(os.path.join(config.outDir, 'logs/hats_{}_{}_{:02d}.log'.format(idx_y, idx_x, img)), 'a') as f:
+                with open(os.path.join(config.outDir, 'logs/hats_{:02d}_{:02d}_{:02d}.log'.format(idx_y, idx_x, img)), 'a') as f:
                     f.write('iter loss ' +
                             ' '.join(['z{}'.format(zi) for zi in range(self.z_dim)]) +
                             '\n')
@@ -301,14 +301,14 @@ Initializing a new one.
                 loss, g, G_imgs, lowres_G_imgs = self.sess.run(run, feed_dict=fd)
 
                 for img in range(batchSz):
-                    with open(os.path.join(config.outDir, 'logs/hats_{}_{}_{:02d}.log'.format(idx_y, idx_x, img)), 'ab') as f:
+                    with open(os.path.join(config.outDir, 'logs/hats_{:02d}_{:02d}_{:02d}.log'.format(idx_y, idx_x, img)), 'ab') as f:
                         f.write('{} {} '.format(i, loss[img]).encode())
                         np.savetxt(f, zhats[img:img+1])
 
                 if i % config.outInterval == 0:
                     print(i, np.mean(loss[0:batchSz]))
                     imgName = os.path.join(config.outDir,
-                                           'hats_imgs/{}_{}_{:04d}.png'.format(idx_y, idx_x, i))
+                                           'hats_imgs/{:02d}_{:02d}_{:04d}.png'.format(idx_y, idx_x, i))
                     nRows = np.ceil(batchSz/8)
                     nCols = min(8, batchSz)
                     save_images(G_imgs[:batchSz,:,:,:], [nRows,nCols], imgName)
@@ -321,7 +321,7 @@ Initializing a new one.
                     inv_masked_hat_images = np.multiply(G_imgs, 1.0-mask)
                     completed = masked_images + inv_masked_hat_images
                     imgName = os.path.join(config.outDir,
-                                           'completed/{}_{}_{:04d}.png'.format(idx_y, idx_x, i))
+                                           'completed/{:02d}_{:02d}_{:04d}.png'.format(idx_y, idx_x, i))
                     save_images(completed[:batchSz,:,:,:], [nRows,nCols], imgName)
 
                 if config.approach == 'adam':
