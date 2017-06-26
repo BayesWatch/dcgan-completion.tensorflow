@@ -124,7 +124,7 @@ class DCGAN(object):
         self.contextual_loss = tf.reduce_sum(
             tf.contrib.layers.flatten(
                 tf.abs(tf.multiply(self.mask, self.G) - tf.multiply(self.mask, self.images))), 1)
-        self.contextual_loss += tf.reduce_sum(
+        self.contextual_loss += 25 * tf.reduce_sum(
             tf.contrib.layers.flatten(
                 tf.abs(tf.multiply(self.lowres_mask, self.lowres_G) - tf.multiply(self.lowres_mask, self.lowres_images))), 1)
         self.perceptual_loss = self.g_loss
@@ -247,17 +247,23 @@ Initializing a new one.
 
         master_image = get_image(config.imgs[0], 0, False)
         master_image = np.repeat(np.repeat(master_image, self.lowres, 0), self.lowres, 1)
+        master_mask = np.zeros(master_image.shape)
 
-        for idx in range(self.lowres * self.lowres):
-            idx_x = idx % self.lowres
-            idx_y = idx // self.lowres
+        tiles_x = -(-(master_image.shape[1] - self.lowres) // (self.image_size - self.lowres))
+        tiles_y = -(-(master_image.shape[0] - self.lowres) // (self.image_size - self.lowres))
+        for idx in range(tiles_x * tiles_y):
+            idx_x = idx % tiles_y
+            idx_y = idx // tiles_y
 
-            mask = np.zeros(self.image_shape)
-            lowres_mask = np.ones(self.lowres_shape)
+            master_x = min(idx_x * (self.image_size - self.lowres), master_image.shape[1] - self.image_size)
+            master_y = min(idx_y * (self.image_size - self.lowres), master_image.shape[0] - self.image_size)
+            mask = master_mask[master_y:master_y+self.image_size,
+                               master_x:master_x+self.image_size, :]
+            lowres_mask = (1-mask)[::self.lowres, ::self.lowres, :]
 
             batchSz = 1
-            batch = [master_image[idx_y*self.image_size:(idx_y+1)*self.image_size,
-                                  idx_x*self.image_size:(idx_x+1)*self.image_size, :]]
+            batch = [master_image[master_y:master_y+self.image_size,
+                                  master_x:master_x+self.image_size, :]]
             batch_images = np.array(batch).astype(np.float32)
             if batchSz < self.batch_size:
                 print(batchSz)
@@ -356,6 +362,15 @@ Initializing a new one.
 
                 else:
                     assert(False)
+
+            trim_x = self.lowres // 2 if idx_x else 0
+            trim_y = self.lowres // 2 if idx_y else 0
+            master_image[master_y+trim_y:master_y+self.image_size,
+                         master_x+trim_x:master_x+self.image_size, :] = G_imgs[:batchSz,trim_y:,trim_x:,:]
+            master_mask[master_y:master_y+self.image_size,
+                        master_x:master_x+self.image_size, :] = np.ones(self.image_shape)
+            save_images(np.array([master_image]), [nRows,nCols],
+                        os.path.join(config.outDir, 'master_{:02d}_{:02d}.png'.format(idx_y, idx_x)))
 
     def discriminator(self, image, reuse=False):
         with tf.variable_scope("discriminator") as scope:
