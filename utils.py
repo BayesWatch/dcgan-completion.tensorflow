@@ -59,6 +59,9 @@ def transform(image, npx=64, is_crop=True):
         cropped_image = center_crop(image, npx)
     else:
         cropped_image = image
+    x = random.randint(0, 512 - npx)
+    y = random.randint(0, 512 - npx)
+    cropped_image = image[y:y+npx, x:x+npx, :]
     return np.array(cropped_image)/127.5 - 1.
 
 def inverse_transform(images):
