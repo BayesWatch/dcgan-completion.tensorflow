@@ -1,1 +1,2 @@
-./complete.py --outInterval=10 --nIter=100 ~/diss/dcgan-completion.tensorflow/input/Aaron_Eckhart_0001.png --outDir output
+./complete.py --checkpointDir=lowres_checkpoint ~/diss/dcgan-completion.tensorflow/input/8.png --outDir output8o
+./complete.py --checkpointDir=lowres_checkpoint ~/diss/dcgan-completion.tensorflow/input/4.png --outDir output4o
