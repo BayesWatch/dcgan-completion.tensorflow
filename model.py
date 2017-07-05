@@ -339,10 +339,12 @@ Initializing a new one.
                     self.sess.run(l_optim, feed_dict=fd)
 
                 elif config.approach == 'scipy':
-                    # Optimize single completion with BFGS
+                    # Optimize single completion with L-BFGS-B
                     def step_callback(xk):
                         print('step')
-                    opt = tf.contrib.opt.ScipyOptimizerInterface(self.complete_loss, var_list=[self.z], options={'maxiter':0})
+                    opt = tf.contrib.opt.ScipyOptimizerInterface(self.complete_loss, var_list=[self.z], method='L-BFGS-B',
+                                                                 bounds=[(-1, 1)] * self.batch_size * self.z_dim,
+                                                                 options={'maxiter': 0})
                     opt.minimize(self.sess, fd, step_callback=step_callback)
 
                 elif config.approach == 'hmc':
