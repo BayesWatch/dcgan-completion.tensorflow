@@ -124,7 +124,7 @@ class DCGAN(object):
         self.contextual_loss = tf.reduce_sum(
             tf.contrib.layers.flatten(
                 tf.abs(tf.multiply(self.mask, self.G) - tf.multiply(self.mask, self.images))), 1)
-        self.contextual_loss += 25 * tf.reduce_sum(
+        self.contextual_loss += 15 * tf.reduce_sum(
             tf.contrib.layers.flatten(
                 tf.abs(tf.multiply(self.lowres_mask, self.lowres_G) - tf.multiply(self.lowres_mask, self.lowres_images))), 1)
         self.perceptual_loss = self.g_loss
@@ -249,14 +249,14 @@ Initializing a new one.
         master_image = np.repeat(np.repeat(master_image, self.lowres, 0), self.lowres, 1)
         master_mask = np.zeros(master_image.shape)
 
-        tiles_x = -(-(master_image.shape[1] - self.lowres) // (self.image_size - self.lowres))
-        tiles_y = -(-(master_image.shape[0] - self.lowres) // (self.image_size - self.lowres))
+        tiles_x = -(-(master_image.shape[1] - 4*self.lowres) // (self.image_size - 4*self.lowres))
+        tiles_y = -(-(master_image.shape[0] - 4*self.lowres) // (self.image_size - 4*self.lowres))
         for idx in range(tiles_x * tiles_y):
             idx_x = idx % tiles_y
             idx_y = idx // tiles_y
 
-            master_x = min(idx_x * (self.image_size - self.lowres), master_image.shape[1] - self.image_size)
-            master_y = min(idx_y * (self.image_size - self.lowres), master_image.shape[0] - self.image_size)
+            master_x = min(idx_x * (self.image_size - 4*self.lowres), master_image.shape[1] - self.image_size)
+            master_y = min(idx_y * (self.image_size - 4*self.lowres), master_image.shape[0] - self.image_size)
             mask = master_mask[master_y:master_y+self.image_size,
                                master_x:master_x+self.image_size, :]
             lowres_mask = (1-mask)[::self.lowres, ::self.lowres, :]
@@ -312,7 +312,7 @@ Initializing a new one.
                         np.savetxt(f, zhats[img:img+1])
 
                 if i % config.outInterval == 0:
-                    print(i, np.mean(loss[0:batchSz]))
+                    print(i, np.mean(config.hmcBeta*loss[0:batchSz]))
                     imgName = os.path.join(config.outDir,
                                            'hats_imgs/{:02d}_{:02d}_{:04d}.png'.format(idx_y, idx_x, i))
                     nRows = np.ceil(batchSz/8)
@@ -330,7 +330,7 @@ Initializing a new one.
                                            'completed/{:02d}_{:02d}_{:04d}.png'.format(idx_y, idx_x, i))
                     save_images(completed[:batchSz,:,:,:], [nRows,nCols], imgName)
 
-                if config.approach == 'adam':
+                if i < 1000:
                     # Optimize single completion with Adam
                     m_prev = np.copy(m)
                     v_prev = np.copy(v)
@@ -341,11 +341,12 @@ Initializing a new one.
                     zhats += - np.true_divide(config.lr * m_hat, (np.sqrt(v_hat) + config.eps))
                     zhats = np.clip(zhats, -1, 1)
 
-                elif config.approach == 'hmc':
+                else:
                     # Sample example completions with HMC (not in paper)
                     assert(self.batch_size == 1)
                     zhats_old = np.copy(zhats)
                     v = np.random.randn(self.batch_size, self.z_dim)
+                    loss_old = loss[0]
                     logprob_old = config.hmcBeta * loss[0] + np.sum(v**2)/2
 
                     for steps in range(config.hmcL):
@@ -358,13 +359,17 @@ Initializing a new one.
                     logprob = config.hmcBeta * loss[0] + np.sum(v**2)/2
                     accept = np.exp(logprob_old - logprob)
                     if accept < 1 and np.random.uniform() > accept:
+                        ans = 'rejected'
+                    else:
+                        ans = 'accepted'
+                    print(accept, ':', ans, '|',
+                          config.hmcBeta*loss_old, '+', logprob_old-config.hmcBeta*loss_old, '=', logprob_old, '|',
+                          config.hmcBeta*loss[0], '+', logprob-config.hmcBeta*loss[0], '=', logprob, '|', logprob_old-logprob)
+                    if ans == 'rejected':
                         np.copyto(zhats, zhats_old)
 
-                else:
-                    assert(False)
-
-            trim_x = self.lowres // 2 if idx_x else 0
-            trim_y = self.lowres // 2 if idx_y else 0
+            trim_x = 4*self.lowres // 2 if idx_x else 0
+            trim_y = 4*self.lowres // 2 if idx_y else 0
             master_image[master_y+trim_y:master_y+self.image_size,
                          master_x+trim_x:master_x+self.image_size, :] = G_imgs[:batchSz,trim_y:,trim_x:,:]
             master_mask[master_y:master_y+self.image_size,
