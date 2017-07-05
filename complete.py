@@ -12,7 +12,7 @@ from model import DCGAN
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--approach', type=str,
-                    choices=['adam', 'hmc'],
+                    choices=['adam', 'adam2', 'scipy', 'hmc'],
                     default='adam')
 parser.add_argument('--lr', type=float, default=0.01)
 parser.add_argument('--beta1', type=float, default=0.9)

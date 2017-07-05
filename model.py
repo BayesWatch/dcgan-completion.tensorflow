@@ -70,7 +70,7 @@ class DCGAN(object):
         self.is_training = tf.placeholder(tf.bool, name='is_training')
         self.images = tf.placeholder(
             tf.float32, [None] + self.image_shape, name='real_images')
-        self.z = tf.placeholder(tf.float32, [None, self.z_dim], name='z')
+        self.z = tf.Variable(tf.zeros([self.batch_size, self.z_dim]), name='z')
         self.z_sum = tf.summary.histogram("z", self.z)
 
         self.G = self.generator(self.z)
@@ -105,7 +105,8 @@ class DCGAN(object):
         self.d_vars = [var for var in t_vars if 'd_' in var.name]
         self.g_vars = [var for var in t_vars if 'g_' in var.name]
 
-        self.saver = tf.train.Saver(max_to_keep=1)
+        x = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+        self.saver = tf.train.Saver(max_to_keep=1, var_list=x[1:])
 
         # Completion.
         self.mask = tf.placeholder(tf.float32, [None] + self.image_shape, name='mask')
@@ -222,6 +223,9 @@ Initializing a new one.
         os.makedirs(os.path.join(config.outDir, 'completed'), exist_ok=True)
         os.makedirs(os.path.join(config.outDir, 'logs'), exist_ok=True)
 
+        l_optim = tf.train.AdamOptimizer(learning_rate=config.lr, beta1=config.beta1, beta2=config.beta2, epsilon=config.eps) \
+                          .minimize(self.complete_loss, var_list=[self.z])
+
         try:
             tf.global_variables_initializer().run()
         except:
@@ -273,6 +277,7 @@ Initializing a new one.
 
             batch_mask = np.resize(mask, [self.batch_size] + self.image_shape)
             zhats = np.random.uniform(-1, 1, size=(self.batch_size, self.z_dim))
+            self.z.assign(zhats).eval()
             m = 0
             v = 0
 
@@ -291,13 +296,12 @@ Initializing a new one.
 
             for i in xrange(config.nIter):
                 fd = {
-                    self.z: zhats,
                     self.mask: batch_mask,
                     self.images: batch_images,
                     self.is_training: False
                 }
-                run = [self.complete_loss, self.grad_complete_loss, self.G]
-                loss, g, G_imgs = self.sess.run(run, feed_dict=fd)
+                run = [self.z, self.complete_loss, self.grad_complete_loss, self.G]
+                zhats, loss, g, G_imgs = self.sess.run(run, feed_dict=fd)
 
                 for img in range(batchSz):
                     with open(os.path.join(config.outDir, 'logs/hats_{:02d}.log'.format(img)), 'ab') as f:
@@ -328,6 +332,18 @@ Initializing a new one.
                     v_hat = v / (1 - config.beta2 ** (i + 1))
                     zhats += - np.true_divide(config.lr * m_hat, (np.sqrt(v_hat) + config.eps))
                     zhats = np.clip(zhats, -1, 1)
+                    self.z.assign(zhats).eval()
+
+                elif config.approach == 'adam2':
+                    # Optimize single completion with official Adam
+                    self.sess.run(l_optim, feed_dict=fd)
+
+                elif config.approach == 'scipy':
+                    # Optimize single completion with BFGS
+                    def step_callback(xk):
+                        print('step')
+                    opt = tf.contrib.opt.ScipyOptimizerInterface(self.complete_loss, var_list=[self.z], options={'maxiter':0})
+                    opt.minimize(self.sess, fd, step_callback=step_callback)
 
                 elif config.approach == 'hmc':
                     # Sample example completions with HMC (not in paper)
@@ -341,7 +357,8 @@ Initializing a new one.
                         v -= config.hmcEps/2 * config.hmcBeta * g[0]
                         zhats += config.hmcEps * v
                         np.copyto(zhats, np.clip(zhats, -1, 1))
-                        loss, g, _ = self.sess.run(run, feed_dict=fd)
+                        self.z.assign(zhats).eval()
+                        zhats, loss, g, _ = self.sess.run(run, feed_dict=fd)
                         v -= config.hmcEps/2 * config.hmcBeta * g[0]
 
                     logprob = config.hmcBeta * loss[0] + np.sum(v**2)/2
@@ -354,7 +371,7 @@ Initializing a new one.
                           config.hmcBeta*loss_old, '+', logprob_old-config.hmcBeta*loss_old, '=', logprob_old, '|',
                           config.hmcBeta*loss[0], '+', logprob-config.hmcBeta*loss[0], '=', logprob, '|', logprob_old-logprob)
                     if ans == 'rejected':
-                        np.copyto(zhats, zhats_old)
+                        self.z.assign(zhats_old).eval()
 
                     config.hmcBeta *= 1.004
 
