@@ -237,6 +237,16 @@ Initializing a new one.
         os.makedirs(os.path.join(config.outDir, 'completed'), exist_ok=True)
         os.makedirs(os.path.join(config.outDir, 'logs'), exist_ok=True)
 
+        self.dct_mat = self.build_dct_mat()
+        self.quant_mat = self.build_quant_mat(3)
+
+        self.dct_ = self.do_dct(127.5 * self.G)
+        self.qdct_ = self.dct_ / self.quant_mat
+        self.qdct_ = tf.round(self.qdct_)
+        self.idct_ = self.do_idct(self.qdct_ * self.quant_mat) / 127.5
+        self.idct_ = tf.maximum(self.idct_, -1)
+        self.idct_ = tf.minimum(self.idct_, 1)
+
         try:
             tf.global_variables_initializer().run()
         except:
@@ -322,8 +332,8 @@ Initializing a new one.
                     self.images: batch_images,
                     self.is_training: False
                 }
-                run = [self.complete_loss, self.grad_complete_loss, self.G, self.lowres_G]
-                loss, g, G_imgs, lowres_G_imgs = self.sess.run(run, feed_dict=fd)
+                run = [self.complete_loss, self.grad_complete_loss, self.G, self.idct_, self.lowres_G]
+                loss, g, G_imgs, idct_imgs, lowres_G_imgs = self.sess.run(run, feed_dict=fd)
 
                 for img in range(batchSz):
                     with open(os.path.join(config.outDir, 'logs/hats_{:02d}.log'.format(img)), 'ab') as f:
@@ -337,6 +347,7 @@ Initializing a new one.
                     nRows = np.ceil(batchSz/8)
                     nCols = min(8, batchSz)
                     save_images(G_imgs[:batchSz,:,:,:], [nRows,nCols], imgName)
+                    save_images(idct_imgs[:batchSz,:,:,:], [nRows,nCols], imgName+'_idct.png')
                     if lowres_mask.any():
                         imgName = imgName[:-4] + '.lowres.png'
                         save_images(np.repeat(np.repeat(lowres_G_imgs[:batchSz,:,:,:],
@@ -381,6 +392,60 @@ Initializing a new one.
 
                 else:
                     assert(False)
+
+    def build_dct_mat(self):
+        D = np.outer(np.arange(8), np.arange(1, 16, 2))
+        D = np.cos(D * np.pi / 16)
+        D[0, :] /= np.sqrt(2)
+        D /= 2
+        return D.astype(np.float32)
+
+    def lmul_blocks(self, D, x):
+        x = tf.reshape(x, [-1, 8, 64, 3])
+        x = tf.transpose(x, [1, 2, 3, 0])
+        x = tf.reshape(x, [8, -1])
+        y = tf.matmul(D, x)
+        y = tf.reshape(y, [8, 64, 3, -1])
+        y = tf.transpose(y, [3, 0, 1, 2])
+        y = tf.reshape(y, [-1, 64, 64, 3])
+        return y
+
+    def rmul_blocks(self, x, D):
+        x = tf.reshape(x, [-1, 8, 3])
+        x = tf.transpose(x, [0, 2, 1])
+        x = tf.reshape(x, [-1, 8])
+        y = tf.matmul(x, D)
+        y = tf.reshape(y, [-1, 3, 8])
+        y = tf.transpose(y, [0, 2, 1])
+        y = tf.reshape(y, [-1, 64, 64, 3])
+        return y
+
+    def do_dct(self, x):
+        return self.lmul_blocks(self.dct_mat, self.rmul_blocks(x, self.dct_mat.T))
+
+    def do_idct(self, x):
+        return self.lmul_blocks(self.dct_mat.T, self.rmul_blocks(x, self.dct_mat))
+
+    def build_quant_mat(self, quality):
+        Q = np.array([
+            [ 16,  11,  10,  16,  24,  40,  51,  61],
+            [ 12,  12,  14,  19,  26,  58,  60,  55],
+            [ 14,  13,  16,  24,  40,  57,  69,  56],
+            [ 14,  17,  22,  29,  51,  87,  80,  62],
+            [ 18,  22,  37,  56,  68, 109, 103,  77],
+            [ 24,  35,  55,  64,  81, 104, 113,  92],
+            [ 49,  64,  78,  87, 103, 121, 120, 101],
+            [ 72,  92,  95,  98, 112, 100, 103,  99]])
+        if quality <= 50:
+            Q = Q * 50. / quality
+        else:
+            Q = Q * (100. - quality) / 50
+        Q = np.round(Q)
+        Q = np.maximum(Q, 1)
+        Q = np.minimum(Q, 255)
+        Q = np.tile(Q, (8,8))
+        Q = Q[np.newaxis, :, :, np.newaxis]
+        return Q
 
     def discriminator(self, image, reuse=False):
         with tf.variable_scope("discriminator") as scope:
