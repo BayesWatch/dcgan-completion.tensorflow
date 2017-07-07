@@ -225,6 +225,9 @@ Initializing a new one.
 
         l_optim = tf.train.AdamOptimizer(learning_rate=config.lr, beta1=config.beta1, beta2=config.beta2, epsilon=config.eps) \
                           .minimize(self.complete_loss, var_list=[self.z])
+        opt = tf.contrib.opt.ScipyOptimizerInterface(self.complete_loss, var_list=[self.z], method='L-BFGS-B',
+                                                     bounds=[(-1, 1)] * self.batch_size * self.z_dim,
+                                                     options={'maxiter': 0, 'disp':True})
 
         try:
             tf.global_variables_initializer().run()
@@ -342,9 +345,6 @@ Initializing a new one.
                     # Optimize single completion with L-BFGS-B
                     def step_callback(xk):
                         print('step')
-                    opt = tf.contrib.opt.ScipyOptimizerInterface(self.complete_loss, var_list=[self.z], method='L-BFGS-B',
-                                                                 bounds=[(-1, 1)] * self.batch_size * self.z_dim,
-                                                                 options={'maxiter': 0})
                     opt.minimize(self.sess, fd, step_callback=step_callback)
 
                 elif config.approach == 'hmc':
