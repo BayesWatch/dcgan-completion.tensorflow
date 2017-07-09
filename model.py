@@ -261,9 +261,9 @@ Initializing a new one.
                                master_x:master_x+self.image_size, :]
             lowres_mask = (1-mask)[::self.lowres, ::self.lowres, :]
 
-            batchSz = 1
+            batchSz = self.batch_size
             batch = [master_image[master_y:master_y+self.image_size,
-                                  master_x:master_x+self.image_size, :]]
+                                  master_x:master_x+self.image_size, :] for _ in range(self.batch_size)]
             batch_images = np.array(batch).astype(np.float32)
             if batchSz < self.batch_size:
                 print(batchSz)
@@ -368,13 +368,14 @@ Initializing a new one.
                     if ans == 'rejected':
                         np.copyto(zhats, zhats_old)
 
+            best_loss = np.argmin(loss)
             trim_x = 4*self.lowres // 2 if idx_x else 0
             trim_y = 4*self.lowres // 2 if idx_y else 0
             master_image[master_y+trim_y:master_y+self.image_size,
-                         master_x+trim_x:master_x+self.image_size, :] = G_imgs[:batchSz,trim_y:,trim_x:,:]
+                         master_x+trim_x:master_x+self.image_size, :] = G_imgs[best_loss,trim_y:,trim_x:,:]
             master_mask[master_y:master_y+self.image_size,
                         master_x:master_x+self.image_size, :] = np.ones(self.image_shape)
-            save_images(np.array([master_image]), [nRows,nCols],
+            save_images(np.array([master_image]), [1,1],
                         os.path.join(config.outDir, 'master_{:02d}_{:02d}.png'.format(idx_y, idx_x)))
 
     def discriminator(self, image, reuse=False):
