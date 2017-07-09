@@ -240,12 +240,24 @@ Initializing a new one.
         self.dct_mat = self.build_dct_mat()
         self.quant_mat = self.build_quant_mat(3)
 
+        self.dct = self.do_dct(127.5 * self.images)
+        self.qdct = self.dct / self.quant_mat
+        self.rqdct = tf.round(self.qdct)
+        self.idct = self.do_idct(self.rqdct * self.quant_mat) / 127.5
+        self.idct = tf.maximum(self.idct, -1)
+        self.idct = tf.minimum(self.idct, 1)
+
         self.dct_ = self.do_dct(127.5 * self.G)
         self.qdct_ = self.dct_ / self.quant_mat
-        self.qdct_ = tf.round(self.qdct_)
-        self.idct_ = self.do_idct(self.qdct_ * self.quant_mat) / 127.5
+        self.rqdct_ = tf.round(self.qdct_)
+        self.idct_ = self.do_idct(self.rqdct_ * self.quant_mat) / 127.5
         self.idct_ = tf.maximum(self.idct_, -1)
         self.idct_ = tf.minimum(self.idct_, 1)
+
+        self.dct_loss = tf.reduce_sum(
+            tf.contrib.layers.flatten(
+                tf.maximum(tf.abs(self.qdct_ - self.rqdct) - 0.5, 0)**2), 1)
+        self.grad_dct_loss = tf.gradients(self.dct_loss, self.z)
 
         try:
             tf.global_variables_initializer().run()
@@ -332,8 +344,8 @@ Initializing a new one.
                     self.images: batch_images,
                     self.is_training: False
                 }
-                run = [self.complete_loss, self.grad_complete_loss, self.G, self.idct_, self.lowres_G]
-                loss, g, G_imgs, idct_imgs, lowres_G_imgs = self.sess.run(run, feed_dict=fd)
+                run = [self.dct_loss, self.grad_dct_loss, self.G, self.idct, self.idct_, self.lowres_G]
+                loss, g, G_imgs, idctimgs, idct_imgs, lowres_G_imgs = self.sess.run(run, feed_dict=fd)
 
                 for img in range(batchSz):
                     with open(os.path.join(config.outDir, 'logs/hats_{:02d}.log'.format(img)), 'ab') as f:
@@ -347,6 +359,7 @@ Initializing a new one.
                     nRows = np.ceil(batchSz/8)
                     nCols = min(8, batchSz)
                     save_images(G_imgs[:batchSz,:,:,:], [nRows,nCols], imgName)
+                    save_images(idctimgs[:batchSz,:,:,:], [nRows,nCols], imgName+'_idcto.png')
                     save_images(idct_imgs[:batchSz,:,:,:], [nRows,nCols], imgName+'_idct.png')
                     if lowres_mask.any():
                         imgName = imgName[:-4] + '.lowres.png'
