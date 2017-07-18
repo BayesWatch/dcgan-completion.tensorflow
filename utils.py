@@ -21,8 +21,8 @@ get_stddev = lambda x, k_h, k_w: 1/math.sqrt(k_w*k_h*x.get_shape()[-1])
 def get_image(image_path, image_size, is_crop=True):
     return transform(imread(image_path), image_size, is_crop)
 
-def save_images(images, size, image_path):
-    return imsave(inverse_transform(images), size, image_path)
+def save_images(images, size, image_path, drop_overlap=False):
+    return imsave(inverse_transform(images), size, image_path, drop_overlap)
 
 def imread(path):
     return scipy.misc.imread(path, mode='RGB').astype(np.float)
@@ -30,7 +30,7 @@ def imread(path):
 def merge_images(images, size):
     return inverse_transform(images)
 
-def merge(images, size):
+def merge(images, size, drop_overlap=False):
     h, w = images.shape[1], images.shape[2]
     img = np.zeros((int(h * size[0]), int(w * size[1]), 3))
     for idx, image in enumerate(images):
@@ -38,10 +38,18 @@ def merge(images, size):
         j = idx // size[1]
         img[j*h:j*h+h, i*w:i*w+w, :] = image
 
+    if drop_overlap:
+        mask = [14*4 + i for i in range(16)]
+        mask.extend((16+14)*4 + i for i in range(16))
+        mask.extend((32+14)*4 + i for i in range(16))
+        mask.extend((48+14)*4 + i for i in range(16))
+        img = np.delete(img, mask, axis=0)
+        img = np.delete(img, mask, axis=1)
+
     return img
 
-def imsave(images, size, path):
-    img = merge(images, size)
+def imsave(images, size, path, drop_overlap=False):
+    img = merge(images, size, drop_overlap)
     return scipy.misc.imsave(path, (255*img).astype(np.uint8))
 
 def center_crop(x, crop_h, crop_w=None, resize_w=64):

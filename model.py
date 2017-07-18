@@ -16,7 +16,7 @@ from utils import *
 
 class DCGAN(object):
     def __init__(self, sess, image_size=64, is_crop=False,
-                 batch_size=64, sample_size=64, lowres=8,
+                 batch_size=64, sample_size=64, lowres=4,
                  z_dim=100, gf_dim=64, df_dim=64,
                  gfc_dim=1024, dfc_dim=1024, c_dim=3,
                  checkpoint_dir=None, lam=0.1):
@@ -245,57 +245,33 @@ Initializing a new one.
         isLoaded = self.load(self.checkpoint_dir)
         assert(isLoaded)
 
-        # data = glob(os.path.join(config.dataset, "*.png"))
-        nImgs = len(config.imgs)
+        master_image = get_image(config.imgs[0], 0, False)
+        master_image = np.repeat(np.repeat(master_image, self.lowres, 0), self.lowres, 1)
+        mask = np.zeros(self.image_shape)
+        lowres_mask = np.ones(self.lowres_shape)
 
-        batch_idxs = int(np.ceil(nImgs/self.batch_size))
-        lowres_mask = np.zeros(self.lowres_shape)
-        if config.maskType == 'random':
-            fraction_masked = 0.2
-            mask = np.ones(self.image_shape)
-            mask[np.random.random(self.image_shape[:2]) < fraction_masked] = 0.0
-        elif config.maskType == 'center':
-            assert(config.centerScale <= 0.5)
-            mask = np.ones(self.image_shape)
-            sz = self.image_size
-            l = int(self.image_size*config.centerScale)
-            u = int(self.image_size*(1.0-config.centerScale))
-            mask[l:u, l:u, :] = 0.0
-        elif config.maskType == 'left':
-            mask = np.ones(self.image_shape)
-            c = self.image_size // 2
-            mask[:,:c,:] = 0.0
-        elif config.maskType == 'full':
-            mask = np.ones(self.image_shape)
-        elif config.maskType == 'grid':
-            mask = np.zeros(self.image_shape)
-            mask[::4,::4,:] = 1.0
-        elif config.maskType == 'lowres':
-            lowres_mask = np.ones(self.lowres_shape)
-            mask = np.zeros(self.image_shape)
-        else:
-            assert(False)
+        tiles_x = -(-(master_image.shape[1] - 4*self.lowres) // (self.image_size - 4*self.lowres))
+        tiles_y = -(-(master_image.shape[0] - 4*self.lowres) // (self.image_size - 4*self.lowres))
+        batch = []
+        for idx in range(tiles_x * tiles_y):
+            idx_x = idx % tiles_y
+            idx_y = idx // tiles_y
 
-        for idx in xrange(0, batch_idxs):
-            l = idx*self.batch_size
-            u = min((idx+1)*self.batch_size, nImgs)
-            batchSz = u-l
-            batch_files = config.imgs[l:u]
-            batch = [get_image(batch_file, self.image_size, is_crop=self.is_crop)
-                     for batch_file in batch_files]
-            batch_images = np.array(batch).astype(np.float32)
-            if batchSz < self.batch_size:
-                print(batchSz)
-                padSz = ((0, int(self.batch_size-batchSz)), (0,0), (0,0), (0,0))
-                batch_images = np.pad(batch_images, padSz, 'constant')
-                batch_images = batch_images.astype(np.float32)
+            master_x = min(idx_x * (self.image_size - 4*self.lowres), master_image.shape[1] - self.image_size)
+            master_y = min(idx_y * (self.image_size - 4*self.lowres), master_image.shape[0] - self.image_size)
 
+            batchSz = self.batch_size
+            batch.append(master_image[master_y:master_y+self.image_size,
+                                      master_x:master_x+self.image_size, :])
+        batch_images = np.array(batch).astype(np.float32)
+
+        if True:
             zhats = np.random.uniform(-1, 1, size=(self.batch_size, self.z_dim))
             m = 0
             v = 0
 
-            nRows = np.ceil(batchSz/8)
-            nCols = min(8, batchSz)
+            nRows = np.ceil(batchSz/5)
+            nCols = min(5, batchSz)
             save_images(batch_images[:batchSz,:,:,:], [nRows,nCols],
                         os.path.join(config.outDir, 'before.png'))
             masked_images = np.multiply(batch_images, mask)
@@ -334,8 +310,8 @@ Initializing a new one.
                     print(i, np.mean(loss[0:batchSz]))
                     imgName = os.path.join(config.outDir,
                                            'hats_imgs/{:04d}.png'.format(i))
-                    nRows = np.ceil(batchSz/8)
-                    nCols = min(8, batchSz)
+                    nRows = np.ceil(batchSz/5)
+                    nCols = min(5, batchSz)
                     save_images(G_imgs[:batchSz,:,:,:], [nRows,nCols], imgName)
                     if lowres_mask.any():
                         imgName = imgName[:-4] + '.lowres.png'
@@ -347,7 +323,7 @@ Initializing a new one.
                     completed = masked_images + inv_masked_hat_images
                     imgName = os.path.join(config.outDir,
                                            'completed/{:04d}.png'.format(i))
-                    save_images(completed[:batchSz,:,:,:], [nRows,nCols], imgName)
+                    save_images(completed[:batchSz,:,:,:], [nRows,nCols], imgName, drop_overlap=True)
 
                 if config.approach == 'adam':
                     # Optimize single completion with Adam
