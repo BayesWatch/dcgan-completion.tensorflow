@@ -16,7 +16,7 @@ from utils import *
 
 class DCGAN(object):
     def __init__(self, sess, image_size=64, is_crop=False,
-                 batch_size=64, sample_size=64, lowres=4,
+                 batch_size=64, sample_size=64, lowres=8,
                  z_dim=100, gf_dim=64, df_dim=64,
                  gfc_dim=1024, dfc_dim=1024, c_dim=3,
                  checkpoint_dir=None, lam=0.1):
@@ -124,7 +124,7 @@ class DCGAN(object):
         self.contextual_loss = tf.reduce_sum(
             tf.contrib.layers.flatten(
                 tf.abs(tf.multiply(self.mask, self.G) - tf.multiply(self.mask, self.images))), 1)
-        self.contextual_loss += 15 * tf.reduce_sum(
+        self.contextual_loss += 25 * tf.reduce_sum(
             tf.contrib.layers.flatten(
                 tf.abs(tf.multiply(self.lowres_mask, self.lowres_G) - tf.multiply(self.lowres_mask, self.lowres_images))), 1)
         self.perceptual_loss = self.g_loss
@@ -249,14 +249,14 @@ Initializing a new one.
         master_image = np.repeat(np.repeat(master_image, self.lowres, 0), self.lowres, 1)
         master_mask = np.zeros(master_image.shape)
 
-        tiles_x = -(-(master_image.shape[1] - 4*self.lowres) // (self.image_size - 4*self.lowres))
-        tiles_y = -(-(master_image.shape[0] - 4*self.lowres) // (self.image_size - 4*self.lowres))
+        tiles_x = -(-(master_image.shape[1] - self.lowres) // (self.image_size - self.lowres))
+        tiles_y = -(-(master_image.shape[0] - self.lowres) // (self.image_size - self.lowres))
         for idx in range(tiles_x * tiles_y):
             idx_x = idx % tiles_y
             idx_y = idx // tiles_y
 
-            master_x = min(idx_x * (self.image_size - 4*self.lowres), master_image.shape[1] - self.image_size)
-            master_y = min(idx_y * (self.image_size - 4*self.lowres), master_image.shape[0] - self.image_size)
+            master_x = min(idx_x * (self.image_size - self.lowres), master_image.shape[1] - self.image_size)
+            master_y = min(idx_y * (self.image_size - self.lowres), master_image.shape[0] - self.image_size)
             mask = master_mask[master_y:master_y+self.image_size,
                                master_x:master_x+self.image_size, :]
             lowres_mask = (1-mask)[::self.lowres, ::self.lowres, :]
@@ -369,8 +369,8 @@ Initializing a new one.
                         np.copyto(zhats, zhats_old)
 
             best_loss = np.argmin(loss)
-            trim_x = 4*self.lowres // 2 if idx_x else 0
-            trim_y = 4*self.lowres // 2 if idx_y else 0
+            trim_x = self.lowres // 2 if idx_x else 0
+            trim_y = self.lowres // 2 if idx_y else 0
             master_image[master_y+trim_y:master_y+self.image_size,
                          master_x+trim_x:master_x+self.image_size, :] = G_imgs[best_loss,trim_y:,trim_x:,:]
             master_mask[master_y:master_y+self.image_size,
