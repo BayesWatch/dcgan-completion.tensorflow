@@ -124,11 +124,16 @@ class DCGAN(object):
         self.contextual_loss = tf.reduce_sum(
             tf.contrib.layers.flatten(
                 tf.abs(tf.multiply(self.mask, self.G) - tf.multiply(self.mask, self.images))), 1)
-        self.contextual_loss += tf.reduce_sum(
+        self.contextual_loss += 15 * tf.reduce_sum(
             tf.contrib.layers.flatten(
                 tf.abs(tf.multiply(self.lowres_mask, self.lowres_G) - tf.multiply(self.lowres_mask, self.lowres_images))), 1)
         self.perceptual_loss = self.g_loss
         self.complete_loss = self.contextual_loss + self.lam*self.perceptual_loss
+        self.complete_loss = tf.reduce_sum(self.complete_loss)
+        for i in range(5):
+            for j in range(4):
+                self.complete_loss += tf.reduce_sum(tf.abs(self.G[5*i + j, :, 48:, :] - self.G[5*i + j+1, :, :16, :]))
+                self.complete_loss += tf.reduce_sum(tf.abs(self.G[5*j + i, 48:, :, :] - self.G[5*j+5 + i, :16, :, :]))
         self.grad_complete_loss = tf.gradients(self.complete_loss, self.z)
 
     def train(self, config):
@@ -303,11 +308,11 @@ Initializing a new one.
 
                 for img in range(batchSz):
                     with open(os.path.join(config.outDir, 'logs/hats_{:02d}.log'.format(img)), 'ab') as f:
-                        f.write('{} {} '.format(i, loss[img]).encode())
+                        f.write('{} {} '.format(i, loss).encode())
                         np.savetxt(f, zhats[img:img+1])
 
                 if i % config.outInterval == 0:
-                    print(i, np.mean(loss[0:batchSz]))
+                    print(i, loss)
                     imgName = os.path.join(config.outDir,
                                            'hats_imgs/{:04d}.png'.format(i))
                     nRows = np.ceil(batchSz/5)
@@ -350,12 +355,12 @@ Initializing a new one.
                         loss, g, _, _ = self.sess.run(run, feed_dict=fd)
                         v -= config.hmcEps/2 * config.hmcBeta * g[0]
 
-                    for img in range(batchSz):
-                        logprob_old = config.hmcBeta * loss_old[img] + np.sum(v_old[img]**2)/2
-                        logprob = config.hmcBeta * loss[img] + np.sum(v[img]**2)/2
+                    if True: # Used to be loop
+                        logprob_old = config.hmcBeta * loss_old + np.sum(v_old**2)/2
+                        logprob = config.hmcBeta * loss + np.sum(v**2)/2
                         accept = np.exp(logprob_old - logprob)
                         if accept < 1 and np.random.uniform() > accept:
-                            np.copyto(zhats[img], zhats_old[img])
+                            np.copyto(zhats, zhats_old)
 
                     config.hmcBeta *= config.hmcAnneal
 
