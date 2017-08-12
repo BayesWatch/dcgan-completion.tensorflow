@@ -124,16 +124,12 @@ class DCGAN(object):
         self.contextual_loss = tf.reduce_sum(
             tf.contrib.layers.flatten(
                 tf.abs(tf.multiply(self.mask, self.G) - tf.multiply(self.mask, self.images))), 1)
-        self.contextual_loss += 15 * tf.reduce_sum(
+        self.contextual_loss += tf.reduce_sum(
             tf.contrib.layers.flatten(
                 tf.abs(tf.multiply(self.lowres_mask, self.lowres_G) - tf.multiply(self.lowres_mask, self.lowres_images))), 1)
         self.perceptual_loss = self.g_loss
         self.complete_loss = self.contextual_loss + self.lam*self.perceptual_loss
         self.complete_loss = tf.reduce_sum(self.complete_loss)
-        for i in range(5):
-            for j in range(4):
-                self.complete_loss += tf.reduce_sum(tf.abs(self.G[5*i + j, :, 48:, :] - self.G[5*i + j+1, :, :16, :]))
-                self.complete_loss += tf.reduce_sum(tf.abs(self.G[5*j + i, 48:, :, :] - self.G[5*j+5 + i, :16, :, :]))
         self.grad_complete_loss = tf.gradients(self.complete_loss, self.z)
 
     def train(self, config):
@@ -255,15 +251,15 @@ Initializing a new one.
         mask = np.zeros(self.image_shape)
         lowres_mask = np.ones(self.lowres_shape)
 
-        tiles_x = -(-(master_image.shape[1] - 4*self.lowres) // (self.image_size - 4*self.lowres))
-        tiles_y = -(-(master_image.shape[0] - 4*self.lowres) // (self.image_size - 4*self.lowres))
+        tiles_x = -(-master_image.shape[1] // self.image_size)
+        tiles_y = -(-master_image.shape[0] // self.image_size)
         batch = []
         for idx in range(tiles_x * tiles_y):
             idx_x = idx % tiles_y
             idx_y = idx // tiles_y
 
-            master_x = min(idx_x * (self.image_size - 4*self.lowres), master_image.shape[1] - self.image_size)
-            master_y = min(idx_y * (self.image_size - 4*self.lowres), master_image.shape[0] - self.image_size)
+            master_x = min(idx_x * self.image_size, master_image.shape[1] - self.image_size)
+            master_y = min(idx_y * self.image_size, master_image.shape[0] - self.image_size)
 
             batchSz = self.batch_size
             batch.append(master_image[master_y:master_y+self.image_size,
@@ -275,8 +271,8 @@ Initializing a new one.
             m = 0
             v = 0
 
-            nRows = np.ceil(batchSz/5)
-            nCols = min(5, batchSz)
+            nRows = np.ceil(batchSz/4)
+            nCols = min(4, batchSz)
             save_images(batch_images[:batchSz,:,:,:], [nRows,nCols],
                         os.path.join(config.outDir, 'before.png'))
             masked_images = np.multiply(batch_images, mask)
@@ -315,8 +311,8 @@ Initializing a new one.
                     print(i, loss)
                     imgName = os.path.join(config.outDir,
                                            'hats_imgs/{:04d}.png'.format(i))
-                    nRows = np.ceil(batchSz/5)
-                    nCols = min(5, batchSz)
+                    nRows = np.ceil(batchSz/4)
+                    nCols = min(4, batchSz)
                     save_images(G_imgs[:batchSz,:,:,:], [nRows,nCols], imgName)
                     if lowres_mask.any():
                         imgName = imgName[:-4] + '.lowres.png'
@@ -328,7 +324,7 @@ Initializing a new one.
                     completed = masked_images + inv_masked_hat_images
                     imgName = os.path.join(config.outDir,
                                            'completed/{:04d}.png'.format(i))
-                    save_images(completed[:batchSz,:,:,:], [nRows,nCols], imgName, drop_overlap=True)
+                    save_images(completed[:batchSz,:,:,:], [nRows,nCols], imgName)
 
                 if config.approach == 'adam':
                     # Optimize single completion with Adam
