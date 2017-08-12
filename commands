@@ -1,0 +1,2 @@
+./complete.py --checkpointDir=/home/richard/diss/dcgan-completion.tensorflow/lowres2b_checkpoint ~/diss/dcgan-completion.tensorflow/input/4.png --outDir=output-4
+./complete.py --checkpointDir=/home/richard/diss/dcgan-completion.tensorflow/lowres2b_checkpoint ~/diss/dcgan-completion.tensorflow/input/8.png --outDir=output-8
